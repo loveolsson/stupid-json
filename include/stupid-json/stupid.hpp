@@ -29,18 +29,24 @@ class Element {
     using StrType = std::string;
     using StrItr = std::string_view::iterator;
 
-    Element(StrItr begin, StrItr end, StrItr *term = nullptr);
-    Element(const std::string_view &view) : Element(view.begin(), view.end()) {}
+    Element() = default;
+    Element(const Element &) = delete;
+    Element(Element &&) = default;
 
-    bool IsError() { return type == Type::Error; }
-    bool IsNumber() { return type == Type::Number; }
-    bool IsObject() { return type == Type::Object; }
-    bool IsArray() { return type == Type::Array; }
-    bool IsNull() { return type == Type::Null; }
-    bool IsTrue() { return type == Type::True; }
-    bool IsFalse() { return type == Type::False; }
-    bool IsBool() { return IsTrue() || IsFalse(); }
-    bool IsValid() { return !IsError(); }
+    bool Parse(StrItr begin, StrItr end, StrItr *term = nullptr);
+    inline bool Parse(const std::string_view &view) {
+        return Parse(view.begin(), view.end());
+    }
+
+    inline bool IsError() { return type == Type::Error; }
+    inline bool IsNumber() { return type == Type::Number; }
+    inline bool IsObject() { return type == Type::Object; }
+    inline bool IsArray() { return type == Type::Array; }
+    inline bool IsNull() { return type == Type::Null; }
+    inline bool IsTrue() { return type == Type::True; }
+    inline bool IsFalse() { return type == Type::False; }
+    inline bool IsBool() { return IsTrue() || IsFalse(); }
+    inline bool IsValid() { return !IsError(); }
 
     Type GetType() { return type; }
 
@@ -48,19 +54,40 @@ class Element {
     Element *GetIndex(size_t index);
     size_t GetCount();
 
+    ObjType::iterator ObjBegin() {
+        assert(IsObject());
+        return std::get<ObjType>(backing).begin();
+    }
+
+    ObjType::iterator ObjEnd() {
+        assert(IsObject());
+        return std::get<ObjType>(backing).end();
+    }
+
+    ArrType::iterator ArrBegin() {
+        assert(IsArray());
+        return std::get<ArrType>(backing).begin();
+    }
+
+    ArrType::iterator ArrEnd() {
+        assert(IsArray());
+        return std::get<ArrType>(backing).end();
+    }
+
     bool GetString(std::ostream &s);
     bool GetString(std::string &str);
 
-    bool GetRawString(ViewType &view) {
+    inline bool GetRawString(ViewType &view) {
         return GetRawStringHelper(view, Type::String);
     }
 
-    bool GetErrorString(ViewType &view) {
+    inline bool GetErrorString(ViewType &view) {
         return GetRawStringHelper(view, Type::Error);
     }
 
-  private:
     bool GetRawStringHelper(ViewType &view, Type testType);
+
+  private:
     bool ParseToken(StrItr begin, StrItr end, Element::StrItr *term,
                     ViewType token);
     bool ParseNumber(StrItr begin, StrItr end, Element::StrItr *term);

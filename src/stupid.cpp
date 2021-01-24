@@ -37,11 +37,11 @@ StrItr ConsumeString(const StrItr begin, const StrItr end) {
     return it;
 }
 
-Element::Element(StrItr begin, StrItr end, StrItr *term) {
+bool Element::Parse(StrItr begin, StrItr end, StrItr *term) {
     begin = FwdSpaces(begin, end);
     if (begin == end) {
         backing.emplace<ViewType>("Element not found before end of document");
-        return;
+        return false;
     }
 
     if (*begin == '"') {
@@ -49,7 +49,7 @@ Element::Element(StrItr begin, StrItr end, StrItr *term) {
         if (str == end) {
             backing.emplace<ViewType>(
                 "String not terminated before end of document");
-            return;
+            return false;
         }
 
         this->backing.emplace<ViewType>(&*(begin + 1),
@@ -57,7 +57,7 @@ Element::Element(StrItr begin, StrItr end, StrItr *term) {
         if (term)
             *term = str + 1;
         type = Type::String;
-        return;
+        return true;
     }
 
     switch (*begin) {
@@ -111,6 +111,8 @@ Element::Element(StrItr begin, StrItr end, StrItr *term) {
                                  std::string(begin, end));
         break;
     }
+
+    return IsValid();
 }
 
 Element *Element::GetMember(ViewType name) {
@@ -301,8 +303,10 @@ bool Element::ParseArray(StrItr begin, StrItr end, Element::StrItr *term) {
             return true;
         }
 
-        auto &el = temp.emplace_back(Element{begin, end, &begin});
-        if (!el.IsValid()) {
+        Element el;
+        if (el.Parse(begin, end, &begin)) {
+            temp.emplace_back(std::move(el));
+        } else {
             ViewType err;
             el.GetErrorString(err);
             backing.emplace<ViewType>(err);
@@ -350,11 +354,13 @@ bool Element::ParseObject(StrItr begin, StrItr end, Element::StrItr *term) {
             return false;
         }
 
-        auto [el, success] = temp.emplace(key, Element{begin + 1, end, &begin});
-        if (!success || !el->second.IsValid()) {
+        Element el;
+        if (el.Parse(begin + 1, end, &begin)) {
+            temp.emplace(key, std::move(el));
+        } else {
             ViewType err;
-            el->second.GetErrorString(err);
-            backing.emplace<ViewType>(err);
+            el.GetErrorString(err);
+            backing.emplace<StrType>(err);
             return false;
         }
 

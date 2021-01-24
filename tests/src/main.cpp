@@ -18,7 +18,8 @@ TEST(Parsing, Simple) {
     std::string body((std::istreambuf_iterator<char>(s)),
                      std::istreambuf_iterator<char>());
 
-    Element root(body);
+    Element root;
+    root.Parse(body);
 
     if (!root.IsValid()) {
         std::string_view err;
@@ -39,11 +40,26 @@ TEST(Parsing, Simple) {
         std::string str;
         hello->GetString(str);
 
-        // std::cout << raw << std::endl;
-        // std::cout << str << std::endl;
+        std::cout << raw << std::endl;
+        std::cout << str << std::endl;
     }
 
     EXPECT_TRUE(true);
+}
+
+TEST(Parsing, BigDoc) {
+    std::ifstream s(path + "/samples/test2.json");
+    std::string body((std::istreambuf_iterator<char>(s)),
+                     std::istreambuf_iterator<char>());
+    Element root;
+    root.Parse(body);
+
+    EXPECT_TRUE(root.IsObject());
+
+    std::string_view err;
+    if (root.GetErrorString(err)) {
+        std::cout << err << std::endl;
+    }
 }
 
 int main(int argc, char **argv) {
