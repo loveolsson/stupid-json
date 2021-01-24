@@ -5,7 +5,7 @@
 
 using namespace StupidJSON;
 
-static std::string path;
+static std::string path = "./";
 
 TEST(Basic, Class) {
     std::cout << "Size of Element: " << sizeof(Element) << std::endl;

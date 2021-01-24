@@ -37,6 +37,9 @@ StrItr ConsumeString(const StrItr begin, const StrItr end) {
     return it;
 }
 
+static inline bool isDigit(char c) { return (c >= '0' && c <= '9'); }
+static inline bool isDigitOrDot(char c) { return c == '.' || isDigit(c); }
+
 bool Element::Parse(StrItr begin, StrItr end, StrItr *term) {
     begin = FwdSpaces(begin, end);
     if (begin == end) {
@@ -272,9 +275,34 @@ bool Element::ParseToken(StrItr begin, StrItr end, Element::StrItr *term,
 }
 
 bool Element::ParseNumber(StrItr begin, StrItr end, Element::StrItr *term) {
+    // Skip past first char, as it's confirmed to be valid, and might be a '-'
     auto numEnd = begin + 1;
-    while (numEnd != end && std::isdigit(*numEnd) || *numEnd == '.') {
+    int dotCount = 0;
+    int numCount = 1;
+    bool malformed = false;
+    if (*begin == '-') {
+        malformed = true;
+        numCount = 0;
+    }
+
+    while (numEnd != end && isDigitOrDot(*numEnd)) {
+        if (*numEnd == '.') {
+            // Dot
+            malformed = true;
+            if (numCount == 0 || ++dotCount > 1) {
+                break;
+            }
+        } else {
+            // Digit
+            numCount++;
+            malformed = false;
+        }
         numEnd++;
+    }
+
+    if (malformed) {
+        backing.emplace<ViewType>("Malformed number");
+        return false;
     }
 
     this->backing.emplace<ViewType>(&*begin, std::distance(begin, numEnd));
