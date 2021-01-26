@@ -172,4 +172,75 @@ class ArenaAllocator {
      */
     std::string_view PushString(std::string_view view);
 };
+
+inline bool Element::ArrayPush(Element *value) {
+    if (type != Type::Array) {
+        return false;
+    }
+
+    assert(value->type != Type::Key);
+
+    if (!firstChild || !lastChild) {
+        firstChild = value;
+    } else {
+        lastChild->next = value;
+    }
+
+    lastChild = value;
+    childCount++;
+    return true;
+}
+
+inline bool Element::ObjectPush(Element *key) {
+    if (type != Type::Object) {
+        return false;
+    }
+
+    assert(key->type == Type::Key);
+    assert(key->firstChild && key->lastChild);
+
+    if (!firstChild || !lastChild) {
+        firstChild = key;
+    } else {
+        lastChild->next = key;
+    }
+
+    lastChild = key;
+    childCount++;
+    return true;
+}
+
+inline bool Element::ValuePush(Element *value) {
+    if (type != Type::Key) {
+        return false;
+    }
+
+    assert(value->type != Type::Key);
+
+    firstChild = value;
+    lastChild = value;
+
+    childCount = 1;
+    return true;
+}
+
+inline Element *Element::FindChildElement(const std::string_view &name) {
+    if (type != Type::Object) {
+        return nullptr;
+    }
+
+    auto it = firstChild;
+
+    while (it) {
+        assert(it->type == Type::Key);
+
+        if (it->ref == name) {
+            return it->firstChild;
+        }
+
+        it = it->next;
+    }
+
+    return nullptr;
+}
 } // namespace StupidJSON
