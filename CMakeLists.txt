@@ -1,3 +1,3 @@
 add_library(stupid-json STATIC)
 target_include_directories(stupid-json PUBLIC include/)
-target_sources(stupid-json PRIVATE src/stupid.cpp)
+target_sources(stupid-json PRIVATE src/stupid.cpp src/arena.cpp)
