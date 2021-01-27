@@ -19,6 +19,10 @@ static inline bool isSpace(char c) {
     }
 }
 
+static inline bool isEndOrNull(StrItr begin, StrItr end) {
+    return begin == end || *begin == 0;
+}
+
 static inline StrItr FwdSpaces(StrItr begin, StrItr end) {
     while (begin != end && isSpace(*begin))
         ++begin;
@@ -423,7 +427,7 @@ void ArenaAllocator::AllocateElements() {
     if (!alloc) {
         return;
     }
-    
+
     alloc->head = 1;
     alloc->size = elementAllocSize;
     alloc->next = nextElementAlloc;
