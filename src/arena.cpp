@@ -5,7 +5,6 @@
 #include <cstring>
 
 namespace StupidJSON {
-using StrItr = std::string_view::iterator;
 
 static inline bool isSpace(char c) {
     switch (c) {
@@ -19,18 +18,19 @@ static inline bool isSpace(char c) {
     }
 }
 
-static inline bool isEndOrNull(StrItr begin, StrItr end) {
+static inline bool isEndOrNull(const char *begin, const char *end) {
     return begin == end || *begin == 0;
 }
 
-static inline StrItr FwdSpaces(StrItr begin, StrItr end) {
+static inline const char *FwdSpaces(const char *begin, const char *end) {
     while (begin != end && isSpace(*begin))
         ++begin;
 
     return begin;
 }
 
-static inline StrItr FwdCommaOrTerm(StrItr begin, StrItr end, char term) {
+static inline const char *FwdCommaOrTerm(const char *begin, const char *end,
+                                         char term) {
     begin = FwdSpaces(begin, end);
     if (begin == end || *begin != ',' && *begin != term) {
         return end;
@@ -43,7 +43,7 @@ static inline StrItr FwdCommaOrTerm(StrItr begin, StrItr end, char term) {
     return FwdSpaces(begin, end);
 }
 
-static inline StrItr ConsumeString(const StrItr begin, const StrItr end) {
+static inline const char *ConsumeString(const char *begin, const char *end) {
     auto it = std::find(begin, end, '\"');
     if (it == begin || it == end) {
         return it;
@@ -59,13 +59,13 @@ static inline StrItr ConsumeString(const StrItr begin, const StrItr end) {
 static inline bool isDigit(char c) { return (c >= '0' && c <= '9'); }
 static inline bool isDigitOrDot(char c) { return c == '.' || isDigit(c); }
 
-static bool ParseToken(Element *elem, StrItr begin, StrItr end, StrItr *term,
-                       std::string_view token) {
-    auto tIt = token.begin();
+static bool ParseToken(Element *elem, const char *begin, const char *end,
+                       const char **term, StringView token) {
+    auto tIt = token.begin;
 
-    while (tIt != token.end()) {
+    while (tIt != token.end) {
         if (begin == end || *begin++ != *tIt++) {
-            elem->ref = "Invalid token";
+            elem->ref = StringView::FromStr("Invalid token");
             return false;
         }
     }
@@ -75,21 +75,24 @@ static bool ParseToken(Element *elem, StrItr begin, StrItr end, StrItr *term,
     return true;
 }
 
-static bool ParseString(Element *elem, StrItr begin, StrItr end, StrItr *term) {
+static bool ParseString(Element *elem, const char *begin, const char *end,
+                        const char **term) {
     auto strEnd = ConsumeString(begin, end);
     if (strEnd == end) {
-        elem->ref = "String not terminated before end of document";
+        elem->ref =
+            StringView::FromStr("String not terminated before end of document");
         return false;
     }
 
-    elem->ref = std::string_view(&*begin, std::distance(begin, strEnd));
+    elem->ref = {begin, strEnd};
     elem->type = Element::Type::String;
     if (term)
         *term = strEnd + 1;
     return true;
 }
 
-static bool ParseNumber(Element *elem, StrItr begin, StrItr end, StrItr *term) {
+static bool ParseNumber(Element *elem, const char *begin, const char *end,
+                        const char **term) {
     // Skip past first char, as it's confirmed to be valid, and might be a '-'
     auto numEnd = begin + 1;
     int dotCount = 0;
@@ -121,12 +124,12 @@ static bool ParseNumber(Element *elem, StrItr begin, StrItr end, StrItr *term) {
     }
 
     if (malformed) {
-        elem->ref = "Malformed number";
+        elem->ref = StringView::FromStr("Malformed number");
         return false;
     }
 
     elem->type = Element::Type::Number;
-    elem->ref = std::string_view(&*begin, std::distance(begin, numEnd));
+    elem->ref = {begin, numEnd};
 
     if (term) {
         *term = numEnd;
@@ -135,8 +138,8 @@ static bool ParseNumber(Element *elem, StrItr begin, StrItr end, StrItr *term) {
     return true;
 }
 
-static bool ParseObject(Element *elem, StrItr begin, StrItr end,
-                        ArenaAllocator &arena, StrItr *term) {
+static bool ParseObject(Element *elem, const char *begin, const char *end,
+                        ArenaAllocator &arena, const char **term) {
     elem->type = Element::Type::Object; // Set type at the start, so that the
                                         // helper works
     begin = FwdSpaces(begin, end);
@@ -150,13 +153,14 @@ static bool ParseObject(Element *elem, StrItr begin, StrItr end,
 
         if (begin == end || *begin != '"') {
             elem->type = Element::Type::Error;
-            elem->ref = "Key not found in object";
+            elem->ref = StringView::FromStr("Key not found in object");
             return false;
         }
 
         auto strEnd = ConsumeString(begin + 1, end);
         if (strEnd == end) {
-            elem->ref = "Key not terminated before end of stream";
+            elem->ref =
+                StringView::FromStr("Key not terminated before end of stream");
             return false;
         }
 
@@ -165,19 +169,19 @@ static bool ParseObject(Element *elem, StrItr begin, StrItr end,
         Element *value = arena.CreateElement();
 
         if (!key || !value) {
-            elem->ref = "Failed to allocate element";
+            elem->ref = StringView::FromStr("Failed to allocate element");
             return false;
         }
 
         key->type = Element::Type::Key;
-        key->ref = std::string_view(&*begin, std::distance(begin, strEnd));
+        key->ref = {begin, strEnd};
         strEnd++; // Skip over closing quote
 
         begin = FwdSpaces(strEnd, end);
 
         if (begin == end || *begin != ':') {
             elem->type = Element::Type::Error;
-            elem->ref = "Invalid char after key";
+            elem->ref = StringView::FromStr("Invalid char after key");
             return false;
         }
 
@@ -195,12 +199,13 @@ static bool ParseObject(Element *elem, StrItr begin, StrItr end,
     }
 
     elem->type = Element::Type::Error;
-    elem->ref = "End of stream reached before end of object";
+    elem->ref =
+        StringView::FromStr("End of stream reached before end of object");
     return false;
 }
 
-static bool ParseArray(Element *elem, StrItr begin, StrItr end,
-                       ArenaAllocator &arena, StrItr *term) {
+static bool ParseArray(Element *elem, const char *begin, const char *end,
+                       ArenaAllocator &arena, const char **term) {
     elem->type = Element::Type::Array; // Set type at the start, so that the
                                        // helper works
     begin = FwdSpaces(begin, end);
@@ -219,7 +224,7 @@ static bool ParseArray(Element *elem, StrItr begin, StrItr end,
         Element *el = arena.CreateElement();
         if (!el) {
             elem->type = Element::Type::Error;
-            elem->ref = "Failed to allocate element";
+            elem->ref = StringView::FromStr("Failed to allocate element");
             return false;
         }
 
@@ -236,12 +241,12 @@ static bool ParseArray(Element *elem, StrItr begin, StrItr end,
     }
 
     elem->type = Element::Type::Error;
-    elem->ref = "Invalid separator in array";
+    elem->ref = StringView::FromStr("Invalid separator in array");
     return false;
 }
 
-bool Element::ParseBody(StrItr begin, StrItr end, ArenaAllocator &arena,
-                        StrItr *term) {
+bool Element::ParseBody(const char *begin, const char *end,
+                        ArenaAllocator &arena, const char **term) {
     type = Type::Error;
     next = nullptr;
     firstChild = nullptr;
@@ -250,7 +255,7 @@ bool Element::ParseBody(StrItr begin, StrItr end, ArenaAllocator &arena,
 
     begin = FwdSpaces(begin, end);
     if (begin == end) {
-        ref = "Element not found before end of document";
+        ref = StringView::FromStr("Element not found before end of document");
         return false;
     }
 
@@ -268,19 +273,19 @@ bool Element::ParseBody(StrItr begin, StrItr end, ArenaAllocator &arena,
         break;
 
     case 'n':
-        if (ParseToken(this, begin, end, term, "null")) {
+        if (ParseToken(this, begin, end, term, StringView::FromStr("null"))) {
             type = Type::Null;
         }
         break;
 
     case 't':
-        if (ParseToken(this, begin, end, term, "true")) {
+        if (ParseToken(this, begin, end, term, StringView::FromStr("true"))) {
             type = Type::True;
         }
         break;
 
     case 'f':
-        if (ParseToken(this, begin, end, term, "false")) {
+        if (ParseToken(this, begin, end, term, StringView::FromStr("false"))) {
             type = Type::False;
         }
         break;
@@ -300,8 +305,7 @@ bool Element::ParseBody(StrItr begin, StrItr end, ArenaAllocator &arena,
         break;
 
     default:
-        ref = arena.PushString("Reached end of parsing with remainder: " +
-                               std::string(begin, end));
+        ref = StringView::FromStr("Reached end of parsing");
         break;
     }
 
@@ -439,9 +443,9 @@ void ArenaAllocator::AllocateElements() {
     }
 };
 
-std::string_view ArenaAllocator::PushString(std::string_view view) {
-    if (view.empty()) {
-        return "";
+StringView ArenaAllocator::PushString(StringView view) {
+    if (view.Empty()) {
+        return StringView::FromStr("");
     }
 
     StringAllocHeader *it = nextStringAlloc;
@@ -449,7 +453,7 @@ std::string_view ArenaAllocator::PushString(std::string_view view) {
 
     // Find allocation that fits the string
     while (it) {
-        if (it->Remain() >= view.size()) {
+        if (it->Remain() >= view.Size()) {
             break;
         }
 
@@ -462,7 +466,7 @@ std::string_view ArenaAllocator::PushString(std::string_view view) {
     }
 
     if (!it) {
-        it = AllocateStrings(std::max<size_t>(view.size(), 1024));
+        it = AllocateStrings(std::max<size_t>(view.Size(), 1024));
     }
 
     assert(it != nullptr);
@@ -472,9 +476,9 @@ std::string_view ArenaAllocator::PushString(std::string_view view) {
     char *ptr =
         reinterpret_cast<char *>(it) + sizeof(StringAllocHeader) + it->head;
 
-    memcpy(ptr, view.data(), view.size());
-    it->head += view.size();
-    return {ptr, view.size()};
+    memcpy(ptr, view.begin, view.Size());
+    it->head += view.Size();
+    return {ptr, view.Size()};
 }
 
 } // namespace StupidJSON

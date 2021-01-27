@@ -23,8 +23,7 @@ struct StringView {
 
     static StringView FromStr(const char *str) {
         size_t size = strlen(str);
-        StringView res{str, size};
-        return res;
+        return {str, size};
     }
 
     size_t Size() const { return std::distance(begin, end); }
@@ -33,6 +32,17 @@ struct StringView {
 
     bool operator==(const StringView &o) const {
         return Size() == o.Size() && strncmp(begin, o.begin, Size()) == 0;
+    }
+
+    bool operator!=(const StringView &o) const { return !(*this == o); }
+    bool operator==(const char *o) const { return *this == FromStr(o); }
+    bool operator!=(const char *o) const { return *this != FromStr(o); }
+
+    std::string_view ToStd() const { return {begin, Size()}; }
+
+    friend std::ostream &operator<<(std::ostream &os, const StringView &s) {
+        os << s.ToStd();
+        return os;
     }
 };
 
@@ -54,16 +64,15 @@ struct Element {
     Element *next;
     Element *firstChild;
     Element *lastChild;
-    std::string_view ref;
+    StringView ref;
 
-    bool ParseBody(std::string_view::iterator begin,
-                   std::string_view::iterator end, ArenaAllocator &arena,
-                   std::string_view::iterator *term);
+    bool ParseBody(const char *begin, const char *end, ArenaAllocator &arena,
+                   const char **term);
 
     bool Serialize(std::ostream &s, int level = 0);
 
-    inline bool ParseBody(std::string_view body, ArenaAllocator &arena) {
-        return ParseBody(body.begin(), body.end(), arena, nullptr);
+    inline bool ParseBody(StringView body, ArenaAllocator &arena) {
+        return ParseBody(body.begin, body.end, arena, nullptr);
     }
 
     bool ArrayPush(Element *value);
@@ -85,7 +94,10 @@ struct Element {
         return nullptr;
     }
 
-    Element *FindChildElement(const std::string_view &name);
+    Element *FindChildElement(const StringView &name);
+    Element *FindChildElement(const char *name) {
+        return FindChildElement(StringView::FromStr(name));
+    }
 
     template <typename L> bool IterateArray(L l) {
         if (type != Type::Array) {
@@ -131,7 +143,8 @@ struct Element {
         std::unordered_map<std::string_view, Element *> map;
         map.reserve(childCount);
 
-        IterateObject([&map](auto name, Element *elem) { map[name] = elem; });
+        IterateObject(
+            [&map](auto name, Element *elem) { map[name.ToStd()] = elem; });
 
         return map;
     }
@@ -196,7 +209,10 @@ class ArenaAllocator {
      * Push a string to a stable position in the arena and return a
      * string_view pointig to it.
      */
-    std::string_view PushString(std::string_view view);
+    StringView PushString(StringView view);
+    StringView PushString(const char *str) {
+        return PushString(StringView::FromStr(str));
+    }
 };
 
 inline bool Element::ArrayPush(Element *value) {
@@ -250,7 +266,7 @@ inline bool Element::ValuePush(Element *value) {
     return true;
 }
 
-inline Element *Element::FindChildElement(const std::string_view &name) {
+inline Element *Element::FindChildElement(const StringView &name) {
     if (type != Type::Object) {
         return nullptr;
     }
