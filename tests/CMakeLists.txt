@@ -7,9 +7,9 @@ add_subdirectory(googletest gtest EXCLUDE_FROM_ALL)
 add_subdirectory(../ stupid-json)
 
 include(GoogleTest)
-
 add_executable(stupid-json-tests src/main.cpp)
 target_link_libraries(stupid-json-tests PRIVATE gtest)
+target_link_libraries(stupid-json-tests PRIVATE gmock)
 target_link_libraries(stupid-json-tests PRIVATE stupid-json)
 
 enable_testing()
