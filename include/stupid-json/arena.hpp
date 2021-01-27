@@ -88,7 +88,7 @@ struct Element {
         return true;
     }
 
-    std::vector<Element *> GetChildrenAsVector() {
+    inline std::vector<Element *> GetChildrenAsVector() {
         std::vector<Element *> arr;
 
         if (type == Type::Array) {
@@ -101,7 +101,7 @@ struct Element {
         return arr;
     }
 
-    std::unordered_map<std::string_view, Element *> GetObjectAsMap() {
+    inline std::unordered_map<std::string_view, Element *> GetObjectAsMap() {
         std::unordered_map<std::string_view, Element *> map;
         map.reserve(childCount);
 
@@ -136,7 +136,7 @@ class ArenaAllocator {
   public:
     ArenaAllocator() = default;
     ArenaAllocator(const ArenaAllocator &) = delete;
-    ArenaAllocator(ArenaAllocator &&);
+    ArenaAllocator(ArenaAllocator &&) noexcept;
     ~ArenaAllocator();
 
     /**

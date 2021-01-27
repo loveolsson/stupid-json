@@ -373,7 +373,7 @@ bool Element::Serialize(std::ostream &s, int level) {
     return res;
 }
 
-ArenaAllocator::ArenaAllocator(ArenaAllocator &&o)
+ArenaAllocator::ArenaAllocator(ArenaAllocator &&o) noexcept
     : nextElementAlloc(o.nextElementAlloc), nextStringAlloc(o.nextStringAlloc) {
     o.nextElementAlloc = nullptr;
     o.nextStringAlloc = nullptr;
@@ -405,6 +405,10 @@ ArenaAllocator::AllocateStrings(size_t size) {
 
     StringAllocHeader *alloc = reinterpret_cast<StringAllocHeader *>(
         malloc(size + sizeof(StringAllocHeader)));
+    if (!alloc) {
+        return nullptr;
+    }
+
     alloc->head = 0;
     alloc->size = size;
     alloc->next = nextStringAlloc;
@@ -416,6 +420,10 @@ ArenaAllocator::AllocateStrings(size_t size) {
 void ArenaAllocator::AllocateElements() {
     auto alloc = reinterpret_cast<ElementAllocHeader *>(
         calloc(elementAllocSize, sizeof(Element)));
+    if (!alloc) {
+        return;
+    }
+    
     alloc->head = 1;
     alloc->size = elementAllocSize;
     alloc->next = nextElementAlloc;
