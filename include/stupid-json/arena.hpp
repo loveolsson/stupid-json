@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <cassert>
+#include <cstring>
 #include <ostream>
 #include <string_view>
 #include <unordered_map>
@@ -9,6 +10,31 @@
 namespace StupidJSON {
 
 class ArenaAllocator;
+
+struct StringView {
+    const char *begin;
+    const char *end;
+
+    StringView() : begin(nullptr), end(nullptr) {}
+    StringView(const char *_begin, const char *_end)
+        : begin(_begin), end(_end) {}
+    StringView(const char *_begin, size_t _size)
+        : begin(_begin), end(begin + _size) {}
+
+    static StringView FromStr(const char *str) {
+        size_t size = strlen(str);
+        StringView res{str, size};
+        return res;
+    }
+
+    size_t Size() const { return std::distance(begin, end); }
+
+    bool Empty() const { return begin == end; }
+
+    bool operator==(const StringView &o) const {
+        return Size() == o.Size() && strncmp(begin, o.begin, Size()) == 0;
+    }
+};
 
 struct Element {
     enum class Type : uint8_t {
