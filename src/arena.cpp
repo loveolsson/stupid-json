@@ -1,5 +1,4 @@
 #include "stupid-json/arena.hpp"
-#include <algorithm>
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
@@ -43,14 +42,21 @@ static inline const char *FwdCommaOrTerm(const char *begin, const char *end,
     return FwdSpaces(begin, end);
 }
 
+static inline const char *FindChar(const char *begin, const char *end, char c) {
+    while (begin != end && *begin != c) {
+        begin++;
+    }
+    return begin;
+}
+
 static inline const char *ConsumeString(const char *begin, const char *end) {
-    auto it = std::find(begin, end, '\"');
+    auto it = FindChar(begin, end, '\"');
     if (it == begin || it == end) {
         return it;
     }
 
     while (it != end && *(it - 1) == '\\') {
-        it = std::find(it + 1, end, '\"');
+        it = FindChar(it + 1, end, '\"');
     }
 
     return it;
@@ -65,7 +71,7 @@ static bool ParseToken(Element *elem, const char *begin, const char *end,
 
     while (tIt != token.end) {
         if (begin == end || *begin++ != *tIt++) {
-            elem->ref = StringView::FromStr("Invalid token");
+            elem->ref = "Invalid token";
             return false;
         }
     }
@@ -79,8 +85,7 @@ static bool ParseString(Element *elem, const char *begin, const char *end,
                         const char **term) {
     auto strEnd = ConsumeString(begin, end);
     if (strEnd == end) {
-        elem->ref =
-            StringView::FromStr("String not terminated before end of document");
+        elem->ref = "String not terminated before end of document";
         return false;
     }
 
@@ -124,7 +129,7 @@ static bool ParseNumber(Element *elem, const char *begin, const char *end,
     }
 
     if (malformed) {
-        elem->ref = StringView::FromStr("Malformed number");
+        elem->ref = "Malformed number";
         return false;
     }
 
@@ -151,44 +156,43 @@ static bool ParseObject(Element *elem, const char *begin, const char *end,
             return true;
         }
 
-        if (begin == end || *begin != '"') {
+        if (begin == end || *begin != '\"') {
             elem->type = Element::Type::Error;
-            elem->ref = StringView::FromStr("Key not found in object");
+            elem->ref = "Key not found in object";
             return false;
         }
 
         auto strEnd = ConsumeString(begin + 1, end);
         if (strEnd == end) {
-            elem->ref =
-                StringView::FromStr("Key not terminated before end of stream");
+            elem->ref = "Key not terminated before end of stream";
             return false;
         }
 
         begin++; // Skip over opening quote
-        Element *key = arena.CreateElement();
         Element *value = arena.CreateElement();
 
-        if (!key || !value) {
-            elem->ref = StringView::FromStr("Failed to allocate element");
+        if (!value) {
+            elem->ref = "Failed to allocate element";
             return false;
         }
 
-        key->type = Element::Type::Key;
-        key->ref = {begin, strEnd};
+        StringView key = {begin, strEnd};
         strEnd++; // Skip over closing quote
 
         begin = FwdSpaces(strEnd, end);
 
         if (begin == end || *begin != ':') {
             elem->type = Element::Type::Error;
-            elem->ref = StringView::FromStr("Invalid char after key");
+            elem->ref = "Invalid char after key";
             return false;
         }
 
         begin++; // Skip over colon
-        if (value->ParseBody(begin, end, arena, &begin)) {
-            key->ValuePush(value);
-            elem->ObjectPush(key);
+        if (value->ParseBody({begin, end}, arena, &begin)) {
+            if (!elem->ObjectPush(key, value, arena)) {
+                elem->type = Element::Type::Error;
+                elem->ref = "Failed to append key to object";
+            }
         } else {
             elem->type = Element::Type::Error;
             elem->ref = value->ref;
@@ -199,8 +203,7 @@ static bool ParseObject(Element *elem, const char *begin, const char *end,
     }
 
     elem->type = Element::Type::Error;
-    elem->ref =
-        StringView::FromStr("End of stream reached before end of object");
+    elem->ref = "End of stream reached before end of object";
     return false;
 }
 
@@ -224,11 +227,11 @@ static bool ParseArray(Element *elem, const char *begin, const char *end,
         Element *el = arena.CreateElement();
         if (!el) {
             elem->type = Element::Type::Error;
-            elem->ref = StringView::FromStr("Failed to allocate element");
+            elem->ref = "Failed to allocate element";
             return false;
         }
 
-        if (el->ParseBody(begin, end, arena, &begin)) {
+        if (el->ParseBody({begin, end}, arena, &begin)) {
             elem->ArrayPush(el);
         } else {
             elem->type = Element::Type::Error;
@@ -241,12 +244,14 @@ static bool ParseArray(Element *elem, const char *begin, const char *end,
     }
 
     elem->type = Element::Type::Error;
-    elem->ref = StringView::FromStr("Invalid separator in array");
+    elem->ref = "Invalid separator in array";
     return false;
 }
 
-bool Element::ParseBody(const char *begin, const char *end,
-                        ArenaAllocator &arena, const char **term) {
+bool Element::ParseBody(StringView body, ArenaAllocator &arena,
+                        const char **term) {
+    auto begin = body.begin, end = body.end;
+
     type = Type::Error;
     next = nullptr;
     firstChild = nullptr;
@@ -255,7 +260,7 @@ bool Element::ParseBody(const char *begin, const char *end,
 
     begin = FwdSpaces(begin, end);
     if (begin == end) {
-        ref = StringView::FromStr("Element not found before end of document");
+        ref = "Element not found before end of document";
         return false;
     }
 
@@ -273,19 +278,19 @@ bool Element::ParseBody(const char *begin, const char *end,
         break;
 
     case 'n':
-        if (ParseToken(this, begin, end, term, StringView::FromStr("null"))) {
+        if (ParseToken(this, begin, end, term, "null")) {
             type = Type::Null;
         }
         break;
 
     case 't':
-        if (ParseToken(this, begin, end, term, StringView::FromStr("true"))) {
+        if (ParseToken(this, begin, end, term, "true")) {
             type = Type::True;
         }
         break;
 
     case 'f':
-        if (ParseToken(this, begin, end, term, StringView::FromStr("false"))) {
+        if (ParseToken(this, begin, end, term, "false")) {
             type = Type::False;
         }
         break;
@@ -305,7 +310,7 @@ bool Element::ParseBody(const char *begin, const char *end,
         break;
 
     default:
-        ref = StringView::FromStr("Reached end of parsing");
+        ref = "Reached end of parsing";
         break;
     }
 
@@ -438,20 +443,16 @@ void ArenaAllocator::AllocateElements() {
     nextElementAlloc = alloc;
 
     // printf("Alloc grow: %lu\n", elementAllocSize);
-    if (elementAllocSize < 1 << 16) {
-        elementAllocSize *= 2;
+    if (elementAllocSize < (1 << 16)) {
+        elementAllocSize <<= 1;
     }
 };
 
 StringView ArenaAllocator::PushString(StringView view) {
-    if (view.Empty()) {
-        return StringView::FromStr("");
-    }
-
     StringAllocHeader *it = nextStringAlloc;
     int searchLength = 3; // Max steps-1 to search for free space
 
-    // Find allocation that fits the string
+    // Find allocation where the string fits
     while (it) {
         if (it->Remain() >= view.Size()) {
             break;

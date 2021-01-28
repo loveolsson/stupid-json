@@ -157,7 +157,7 @@ TEST(Parsing, BigDocMalformedNumber) {
 
     ArenaAllocator arena;
     auto root = arena.CreateElement();
-    EXPECT_FALSE(root->ParseBody({body.data(), body.size()}, arena));
+    EXPECT_FALSE(root->ParseBody(StringView{body.data(), body.size()}, arena));
 }
 
 TEST(Parsing, WithCopy) {
@@ -180,10 +180,10 @@ TEST(Malformed, NumberPlus) {
     auto body_valid = "{\"a\": -4 }";
     auto body_malformed = "{\"a\": +4 }";
     auto root = arena.CreateElement();
-    EXPECT_TRUE(root->ParseBody(StringView::FromStr(body_valid), arena));
+    EXPECT_TRUE(root->ParseBody(body_valid, arena));
     EXPECT_EQ(root->FindChildElement("a")->ref, "-4");
 
-    EXPECT_FALSE(root->ParseBody(StringView::FromStr(body_malformed), arena));
+    EXPECT_FALSE(root->ParseBody(body_malformed, arena));
 }
 
 TEST(Malformed, NumberExtraDot) {
@@ -191,8 +191,8 @@ TEST(Malformed, NumberExtraDot) {
     auto body_valid = "{\"a\": 4.0 }";
     auto body_malformed = "{\"a\": 4.0.0 }";
     auto root = arena.CreateElement();
-    EXPECT_TRUE(root->ParseBody(StringView::FromStr(body_valid), arena));
-    EXPECT_FALSE(root->ParseBody(StringView::FromStr(body_malformed), arena));
+    EXPECT_TRUE(root->ParseBody(body_valid, arena));
+    EXPECT_FALSE(root->ParseBody(body_malformed, arena));
 }
 
 TEST(Malformed, StringEscapedQuote) {
@@ -200,8 +200,8 @@ TEST(Malformed, StringEscapedQuote) {
     auto body_valid = "{\"a\": \"b\" }";
     auto body_malformed = "{\"a\": \"b\\\" }";
     auto root = arena.CreateElement();
-    EXPECT_TRUE(root->ParseBody(StringView::FromStr(body_valid), arena));
-    EXPECT_FALSE(root->ParseBody(StringView::FromStr(body_malformed), arena));
+    EXPECT_TRUE(root->ParseBody(body_valid, arena));
+    EXPECT_FALSE(root->ParseBody(body_malformed, arena));
 }
 
 TEST(Malformed, ObjectMissingKey) {
@@ -209,15 +209,15 @@ TEST(Malformed, ObjectMissingKey) {
     auto body_valid = "{\"a\": \"b\" }";
     auto body_malformed = "{ \"b\" }";
     auto root = arena.CreateElement();
-    EXPECT_TRUE(root->ParseBody(StringView::FromStr(body_valid), arena));
-    EXPECT_FALSE(root->ParseBody(StringView::FromStr(body_malformed), arena));
+    EXPECT_TRUE(root->ParseBody(body_valid, arena));
+    EXPECT_FALSE(root->ParseBody(body_malformed, arena));
 }
 
 TEST(STLTypes, Vector) {
     ArenaAllocator arena;
     auto body = "[1, 2, 3, 6, 7, 8]";
     auto root = arena.CreateElement();
-    EXPECT_TRUE(root->ParseBody(StringView::FromStr(body), arena));
+    EXPECT_TRUE(root->ParseBody(body, arena));
 
     auto vec = root->GetChildrenAsVector();
     EXPECT_EQ(vec.size(), 6);
@@ -228,7 +228,7 @@ TEST(STLTypes, Map) {
     ArenaAllocator arena;
     auto body = "{\"a\": 1, \"b\": 2, \"c\": 3}";
     auto root = arena.CreateElement();
-    EXPECT_TRUE(root->ParseBody(StringView::FromStr(body), arena));
+    EXPECT_TRUE(root->ParseBody(body, arena));
 
     auto vec = root->GetObjectAsMap();
     EXPECT_TRUE(vec.count("b"));
@@ -237,7 +237,8 @@ TEST(STLTypes, Map) {
 }
 
 TEST(Serialize, Simple) {
-    auto body = ReadFile("/samples/test2.json");
+    // auto body = ReadFile("/samples/test2.json");
+    auto &body = citmBody;
 
     ArenaAllocator arena;
     auto root = arena.CreateElement();
@@ -250,8 +251,10 @@ TEST(Serialize, Simple) {
     EXPECT_TRUE(str.size() > 1000);
 }
 
+#if 0
 TEST(Serialize, ToFile) {
-    auto body = ReadFile("/samples/test2.json");
+    // auto body = ReadFile("/samples/test2.json");
+    auto &body = citmBody;
 
     ArenaAllocator arena;
     auto root = arena.CreateElement();
@@ -270,6 +273,7 @@ TEST(Serialize, ToFile) {
         s.close();
     }
 }
+#endif
 
 int main(int argc, char **argv) {
     if (argc == 3) {

@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <cassert>
+#include <charconv>
 #include <cstring>
 #include <ostream>
 #include <string_view>
@@ -15,28 +16,42 @@ struct StringView {
     const char *begin;
     const char *end;
 
-    StringView() : begin(nullptr), end(nullptr) {}
-    StringView(const char *_begin, const char *_end)
+    inline StringView() : begin(nullptr), end(nullptr) {}
+    inline StringView(const char *_begin, const char *_end)
         : begin(_begin), end(_end) {}
-    StringView(const char *_begin, size_t _size)
-        : begin(_begin), end(begin + _size) {}
+    inline StringView(const char *_begin, size_t _size)
+        : begin(_begin), end(_begin + _size) {}
+    inline StringView(const char *str) : StringView(str, strlen(str)) {}
 
-    static StringView FromStr(const char *str) {
-        size_t size = strlen(str);
-        return {str, size};
+    inline size_t Size() const { return static_cast<size_t>(end - begin); }
+    inline bool Empty() const { return begin == end; }
+
+#if 0
+    inline bool operator==(const StringView &o) const {
+        return Size() == o.Size() && memcmp(begin, o.begin, Size()) == 0;
     }
-
-    size_t Size() const { return std::distance(begin, end); }
-
-    bool Empty() const { return begin == end; }
-
-    bool operator==(const StringView &o) const {
-        return Size() == o.Size() && strncmp(begin, o.begin, Size()) == 0;
+#else
+    // Faster for shorter strings, such as keys
+    inline bool operator==(const StringView &o) const {
+        if (Size() != o.Size())
+            return false;
+        if (begin == o.begin) // Unlikely unless comparing to user insertions
+            return true;
+        for (int i = 0; i < Size(); ++i) {
+            if (begin[i] != o.begin[i])
+                return false;
+        }
+        return true;
     }
+#endif
 
-    bool operator!=(const StringView &o) const { return !(*this == o); }
-    bool operator==(const char *o) const { return *this == FromStr(o); }
-    bool operator!=(const char *o) const { return *this != FromStr(o); }
+    inline bool operator!=(const StringView &o) const { return !(*this == o); }
+    inline bool operator==(const char *o) const {
+        return *this == StringView(o);
+    }
+    inline bool operator!=(const char *o) const {
+        return *this != StringView(o);
+    }
 
     std::string_view ToStd() const { return {begin, Size()}; }
 
@@ -66,38 +81,22 @@ struct Element {
     Element *lastChild;
     StringView ref;
 
-    bool ParseBody(const char *begin, const char *end, ArenaAllocator &arena,
-                   const char **term);
+    bool ParseBody(StringView body, ArenaAllocator &arena,
+                   const char **term = nullptr);
 
     bool Serialize(std::ostream &s, int level = 0);
 
-    inline bool ParseBody(StringView body, ArenaAllocator &arena) {
-        return ParseBody(body.begin, body.end, arena, nullptr);
-    }
-
     bool ArrayPush(Element *value);
-    bool ObjectPush(Element *key);
+    bool ObjectPush(StringView key, Element *value, ArenaAllocator &arena);
+    bool ObjectAssign(StringView key, Element *value, ArenaAllocator &arena);
     bool ValuePush(Element *key);
 
-    Element *GetArrayIndex(uint32_t index) {
-        if (type != Type::Array || childCount <= index) {
-            return nullptr;
-        }
+    template <typename T> bool GetNumber(T &val);
+    template <typename T> bool SetNumber(T val, ArenaAllocator &arena);
 
-        uint32_t i = 0;
-        for (auto it = firstChild; it != nullptr; it = it->next) {
-            if (i++ == index) {
-                return it;
-            }
-        }
-
-        return nullptr;
-    }
-
-    Element *FindChildElement(const StringView &name);
-    Element *FindChildElement(const char *name) {
-        return FindChildElement(StringView::FromStr(name));
-    }
+    Element *GetArrayIndex(uint32_t index);
+    Element *FindKey(StringView name);
+    Element *FindChildElement(StringView name);
 
     template <typename L> bool IterateArray(L l) {
         if (type != Type::Array) {
@@ -210,9 +209,6 @@ class ArenaAllocator {
      * string_view pointig to it.
      */
     StringView PushString(StringView view);
-    StringView PushString(const char *str) {
-        return PushString(StringView::FromStr(str));
-    }
 };
 
 inline bool Element::ArrayPush(Element *value) {
@@ -233,21 +229,30 @@ inline bool Element::ArrayPush(Element *value) {
     return true;
 }
 
-inline bool Element::ObjectPush(Element *key) {
+inline bool Element::ObjectPush(StringView key, Element *value,
+                                ArenaAllocator &arena) {
     if (type != Type::Object) {
         return false;
     }
 
-    assert(key->type == Type::Key);
-    assert(key->firstChild && key->lastChild);
+    assert(value->type != Type::Key);
+    assert(value->type != Type::Error);
+
+    Element *keyElem = arena.CreateElement();
+    if (!keyElem)
+        return false;
+
+    keyElem->type = Type::Key;
+    keyElem->ref = key;
+    keyElem->ValuePush(value);
 
     if (!firstChild || !lastChild) {
-        firstChild = key;
+        firstChild = keyElem;
     } else {
-        lastChild->next = key;
+        lastChild->next = keyElem;
     }
 
-    lastChild = key;
+    lastChild = keyElem;
     childCount++;
     return true;
 }
@@ -266,7 +271,46 @@ inline bool Element::ValuePush(Element *value) {
     return true;
 }
 
-inline Element *Element::FindChildElement(const StringView &name) {
+template <typename T> bool Element::GetNumber(T &val) {
+    if (type != Type::Number)
+        return false;
+    std::from_chars_result res = std::from_chars(ref.begin, ref.end, val);
+
+    return res.ec == std::errc();
+}
+
+template <typename T> bool Element::SetNumber(T val, ArenaAllocator &arena) {
+    char buf[128];
+    std::to_chars_result res =
+        std::to_chars(std::begin(buf), std::end(buf), val);
+
+    if (res.ec == std::errc()) {
+        type = Type::Number;
+        ref = arena.PushString({buf, res.ptr});
+    } else {
+        type = Type::Error;
+        ref = "Failed to set number";
+        return false;
+    }
+    return res.ec == std::errc();
+}
+
+inline Element *Element::GetArrayIndex(uint32_t index) {
+    if (type != Type::Array || childCount <= index) {
+        return nullptr;
+    }
+
+    uint32_t i = 0;
+    for (auto it = firstChild; it != nullptr; it = it->next) {
+        if (i++ == index) {
+            return it;
+        }
+    }
+
+    return nullptr;
+}
+
+inline Element *Element::FindKey(StringView name) {
     if (type != Type::Object) {
         return nullptr;
     }
@@ -277,7 +321,7 @@ inline Element *Element::FindChildElement(const StringView &name) {
         assert(it->type == Type::Key);
 
         if (it->ref == name) {
-            return it->firstChild;
+            return it;
         }
 
         it = it->next;
@@ -285,4 +329,27 @@ inline Element *Element::FindChildElement(const StringView &name) {
 
     return nullptr;
 }
+
+inline Element *Element::FindChildElement(StringView name) {
+    Element *key = FindKey(name);
+    if (key)
+        return key->firstChild;
+
+    return nullptr;
+}
+
+inline bool Element::ObjectAssign(StringView key, Element *value,
+                                  ArenaAllocator &arena) {
+    if (value->type == Type::Key || value->type == Type::Error)
+        return false;
+
+    Element *find = FindChildElement(key);
+    if (find) {
+        find->ValuePush(value);
+        return true;
+    }
+
+    return ObjectPush(key, value, arena);
+}
+
 } // namespace StupidJSON
