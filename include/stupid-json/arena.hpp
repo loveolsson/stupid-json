@@ -62,7 +62,7 @@ struct StringView {
 };
 
 struct Element {
-    enum class Type : uint8_t {
+    enum class Type {
         Error = 0,
         Key,
         String,
