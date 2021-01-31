@@ -22,7 +22,7 @@ static std::string ReadFile(std::string_view name) {
 }
 
 TEST(Basic, Class) {
-    EXPECT_EQ(sizeof(Element), 48);
+    EXPECT_EQ(sizeof(Element), 56);
     EXPECT_TRUE(std::is_move_constructible<Element>::value);
 }
 
@@ -68,7 +68,7 @@ TEST(Parsing, Simple) {
 
     EXPECT_EQ(root->type, Element::Type::Object);
 
-    auto hello = root->FindChildElement("hello");
+    auto hello = root->FindChildElement("hello", arena);
     EXPECT_TRUE(hello);
 
     if (hello) {
@@ -90,13 +90,13 @@ TEST(Parsing, BigDoc) {
         std::cout << root->ref << std::endl;
     }
 
-    auto child = root->FindChildElement("web-app");
+    auto child = root->FindChildElement("web-app", arena);
     EXPECT_TRUE(child);
 
     if (child) {
         int i = 0;
 
-        EXPECT_TRUE(child->IterateObject([&i](auto key, auto obj) {
+        EXPECT_TRUE(child->IterateObject(arena, [&i](auto key, auto obj) {
             // std::cout << "Key: " << key << std::endl;
             i++;
         }));
@@ -104,6 +104,34 @@ TEST(Parsing, BigDoc) {
         EXPECT_EQ(i, 3);
         EXPECT_EQ(i, child->childCount);
     }
+}
+
+TEST(ValueParse, Simple) {
+    ArenaAllocator arena;
+    auto body = "{\"a\": 5, \"b\": -10, \"c\": 5.3 }";
+    auto root = arena.CreateElement();
+    EXPECT_TRUE(root->ParseBody(body, arena));
+
+    auto a = root->FindChildElement("a", arena);
+    auto b = root->FindChildElement("b", arena);
+    auto c = root->FindChildElement("c", arena);
+
+    EXPECT_TRUE(a && b && c);
+
+    int aV, bV;
+    float cV;
+
+    EXPECT_TRUE(a->GetInteger(aV));
+    EXPECT_TRUE(b->GetInteger(bV));
+    EXPECT_TRUE(c->GetFloatingPoint(cV));
+
+    EXPECT_TRUE(a->SetNumber(4, arena));
+    EXPECT_TRUE(b->SetNumber(-4, arena));
+    EXPECT_TRUE(c->SetNumber(4.5, arena));
+
+    EXPECT_EQ(aV, 5);
+    EXPECT_EQ(bV, -10);
+    EXPECT_FLOAT_EQ(cV, 5.3);
 }
 
 TEST(Parsing, HugeDoc) {
@@ -116,16 +144,16 @@ TEST(Parsing, HugeDoc) {
         std::cout << root->ref << std::endl;
     }
 
-    auto features = root->FindChildElement("features");
+    auto features = root->FindChildElement("features", arena);
     EXPECT_TRUE(features);
     EXPECT_EQ(features->type, Element::Type::Array);
     EXPECT_EQ(features->childCount, 1);
 
     auto feature = features->GetArrayIndex(0);
     EXPECT_TRUE(feature);
-    auto geometry = feature->FindChildElement("geometry");
+    auto geometry = feature->FindChildElement("geometry", arena);
     EXPECT_TRUE(geometry);
-    auto coordinates = geometry->FindChildElement("coordinates");
+    auto coordinates = geometry->FindChildElement("coordinates", arena);
     EXPECT_TRUE(coordinates);
 
     testing::MockFunction<void()> mockCallback;
@@ -175,13 +203,31 @@ TEST(Parsing, WithCopy) {
     EXPECT_TRUE(root->type == Element::Type::Object);
 }
 
+TEST(Parsing, MultiLine) {
+    ArenaAllocator arena;
+    auto body = ReadFile("/tmp/one-json-per-line.jsons");
+
+    std::string line;
+    std::istringstream s(body);
+    while (std::getline(s, line)) {
+        auto root = arena.CreateElement();
+
+        EXPECT_TRUE(root->ParseBody({line.data(), line.size()}, arena));
+        EXPECT_TRUE(root->type == Element::Type::Object);
+
+        arena.Reset();
+    }
+}
+
 TEST(Malformed, NumberPlus) {
     ArenaAllocator arena;
     auto body_valid = "{\"a\": -4 }";
     auto body_malformed = "{\"a\": +4 }";
     auto root = arena.CreateElement();
     EXPECT_TRUE(root->ParseBody(body_valid, arena));
-    EXPECT_EQ(root->FindChildElement("a")->ref, "-4");
+    int val;
+    root->FindChildElement("a", arena)->GetInteger(val);
+    EXPECT_EQ(val, -4);
 
     EXPECT_FALSE(root->ParseBody(body_malformed, arena));
 }
@@ -230,7 +276,7 @@ TEST(STLTypes, Map) {
     auto root = arena.CreateElement();
     EXPECT_TRUE(root->ParseBody(body, arena));
 
-    auto vec = root->GetObjectAsMap();
+    auto vec = root->GetObjectAsMap(arena);
     EXPECT_TRUE(vec.count("b"));
     EXPECT_EQ(vec.size(), 3);
     EXPECT_EQ(vec["b"]->ref, "2");
@@ -246,20 +292,27 @@ TEST(Serialize, Simple) {
     EXPECT_TRUE(root->type == Element::Type::Object);
 
     std::ostringstream s;
-    EXPECT_TRUE(root->Serialize(s));
+    EXPECT_TRUE(root->Serialize(arena, s));
     auto str = s.str();
     EXPECT_TRUE(str.size() > 1000);
 }
 
-#if 0
+#if 1
 TEST(Serialize, ToFile) {
     // auto body = ReadFile("/samples/test2.json");
-    auto &body = citmBody;
+    // auto &body = citmBody;
+    auto body = ReadFile("/samples/test1.json");
 
     ArenaAllocator arena;
     auto root = arena.CreateElement();
     EXPECT_TRUE(root->ParseBody({body.data(), body.size()}, arena));
     EXPECT_TRUE(root->type == Element::Type::Object);
+
+    auto hello = root->FindChildElement("hello", arena);
+    auto view = hello->GetString(arena);
+    // std::cout << view.ToStd() << std::endl;
+    EXPECT_TRUE(view == "ffǌdsfsd😄🐶");
+    hello->SetString(view);
 
     std::string tempDir = path + "/tmp";
     if (!std::filesystem::is_directory(tempDir)) {
@@ -269,7 +322,7 @@ TEST(Serialize, ToFile) {
     if (std::filesystem::is_directory(tempDir)) {
         std::ofstream s(tempDir + "/dump.json");
         EXPECT_TRUE(s.is_open());
-        EXPECT_TRUE(root->Serialize(s));
+        EXPECT_TRUE(root->Serialize(arena, s));
         s.close();
     }
 }

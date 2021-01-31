@@ -2,23 +2,116 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
 
 namespace StupidJSON {
 
 static inline bool isSpace(char c) {
-    switch (c) {
-    case '\t':
-    case '\n':
-    case '\r':
-    case ' ':
-        return true;
-    default:
-        return false;
-    }
+    static const bool table[256] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    return table[c];
 }
 
-static inline bool isEndOrNull(const char *begin, const char *end) {
-    return begin == end || *begin == 0;
+static inline bool isDigit(char c) {
+    static const bool table[256] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    return table[c];
+}
+
+static inline bool isDigitOrDot(char c) {
+    static const bool table[256] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    return table[c];
+}
+
+/*
+static inline std::array<int8_t, 256> GenerateHexTable() {
+    std::array<int8_t, 256> res;
+    res.fill(-1);
+    res['0'] = 0;
+    res['1'] = 1;
+    res['2'] = 2;
+    res['3'] = 3;
+    res['4'] = 4;
+    res['5'] = 5;
+    res['6'] = 6;
+    res['7'] = 7;
+    res['8'] = 8;
+    res['9'] = 9;
+    res['a'] = res['A'] = 10;
+    res['b'] = res['B'] = 11;
+    res['c'] = res['C'] = 12;
+    res['d'] = res['D'] = 13;
+    res['e'] = res['E'] = 14;
+    res['f'] = res['F'] = 15;
+
+    std::cout << std::endl;
+    for (int c : res) {
+        std::cout << c << ", ";
+    }
+    std::cout << std::endl;
+    return res;
+}
+*/
+
+static inline int8_t GetHexValue(char c) {
+    // static const auto table = GenerateHexTable();
+    static const int8_t table[] = {
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0,  1,  2,  3,  4,  5,
+        6,  7,  8,  9,  -1, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1,
+    };
+    return table[c];
+}
+
+static inline char GetHexChar(char v) {
+    char table[] = {
+        '0', '1', '2', '3', '4', '5', '6', '7',
+        '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+    };
+    return table[v];
 }
 
 static inline const char *FwdSpaces(const char *begin, const char *end) {
@@ -46,7 +139,20 @@ static inline const char *FindChar(const char *begin, const char *end, char c) {
     while (begin != end && *begin != c) {
         begin++;
     }
+
     return begin;
+}
+
+static inline size_t CountChar(const char *begin, const char *end, char c) {
+    size_t count = 0;
+    while (begin != end) {
+        if (*begin == c)
+            count++;
+
+        begin++;
+    }
+
+    return count;
 }
 
 static inline const char *ConsumeString(const char *begin, const char *end) {
@@ -61,9 +167,6 @@ static inline const char *ConsumeString(const char *begin, const char *end) {
 
     return it;
 }
-
-static inline bool isDigit(char c) { return (c >= '0' && c <= '9'); }
-static inline bool isDigitOrDot(char c) { return c == '.' || isDigit(c); }
 
 static bool ParseToken(Element *elem, const char *begin, const char *end,
                        const char **term, StringView token) {
@@ -143,10 +246,218 @@ static bool ParseNumber(Element *elem, const char *begin, const char *end,
     return true;
 }
 
+void Element::EscapeStr(ArenaAllocator &arena) {
+    auto count = CountChar(ref.begin, ref.end, '\\');
+
+    size_t totalSize = cleanRef.Size() + count;
+    char *target = arena.AllocateString(totalSize);
+    char *t = target;
+    bool isDirty = false;
+
+    for (auto c = ref.begin; c != ref.end;) {
+        // if (*c >= 0x80) {
+        //     // Unicode
+        //     size_t u = 0;
+
+        //     *(t++) = '\\';
+        //     *(t++) = 'u';
+        //     *(t++) = GetHexChar((u >> 12) & 0xf);
+        //     *(t++) = GetHexChar((u >> 8) & 0xf);
+        //     *(t++) = GetHexChar((u >> 4) & 0xf);
+        //     *(t++) = GetHexChar(u & 0xf);
+
+        //     continue;
+        // }
+
+        switch (*c) {
+        case '\b':
+            *(t++) = '\\';
+            *(t++) = 'b';
+            c++;
+            isDirty = true;
+            break;
+        case '\f':
+            *(t++) = '\\';
+            *(t++) = 'f';
+            c++;
+            isDirty = true;
+            break;
+        case '\n':
+            *(t++) = '\\';
+            *(t++) = 'n';
+            c++;
+            isDirty = true;
+            break;
+        case '\r':
+            *(t++) = '\\';
+            *(t++) = 'r';
+            c++;
+            isDirty = true;
+            break;
+        case '\t':
+            *(t++) = '\\';
+            *(t++) = 't';
+            c++;
+            isDirty = true;
+            break;
+        case '\"':
+            *(t++) = '\\';
+            *(t++) = '\"';
+            c++;
+            isDirty = true;
+            break;
+        case '\\':
+            *(t++) = '\\';
+            *(t++) = '\\';
+            c++;
+            isDirty = true;
+            break;
+        default:
+            *(t++) = *(c++);
+        }
+    }
+
+    if (!isDirty) {
+        ref = cleanRef;
+        arena.ReturnUnused(totalSize);
+    } else {
+        ref = {target, t};
+        arena.ReturnUnused(totalSize - std::distance(target, t));
+    }
+}
+
+static int ReadUnicodeLiteral(const char *begin, const char *end,
+                              const char **term) {
+    if (begin == end || *(begin++) != '\\')
+        return -1;
+    if (begin == end || *(begin++) != 'u')
+        return -1;
+
+    uint16_t u = 0;
+    for (int i = 0; i < 4; ++i) {
+        if (begin == end)
+            return -1;
+
+        int8_t val = GetHexValue(*(begin++));
+        if (val == -1)
+            return false;
+
+        u <<= 4;
+        u |= val;
+    }
+
+    if (term)
+        *term = begin;
+
+    return u;
+}
+
+bool Element::UnescapeStr(ArenaAllocator &arena) {
+    auto count = CountChar(ref.begin, ref.end, '\\');
+    if (count == 0) {
+        cleanRef = ref; // This is a clean string, it can be used as is
+        return true;
+    }
+
+    size_t totalSize = ref.Size();
+    char *target = arena.AllocateString(totalSize);
+    char *t = target;
+
+    for (auto c = ref.begin; c != ref.end;) {
+        if (*c == '\\') {
+            if (c + 1 == ref.end) {
+                return false;
+            }
+
+            switch (*(c + 1)) {
+            case 'b':
+                *(t++) = '\b';
+                c += 2;
+                break;
+            case 'f':
+                *(t++) = '\f';
+                c += 2;
+                break;
+            case 'n':
+                *(t++) = '\n';
+                c += 2;
+                break;
+            case 'r':
+                *(t++) = '\r';
+                c += 2;
+                break;
+            case 't':
+                *(t++) = '\t';
+                c += 2;
+                break;
+            case '\"':
+                *(t++) = '\"';
+                c += 2;
+                break;
+            case '\\':
+                *(t++) = '\\';
+                c += 2;
+                break;
+            case 'u': {
+                int lit = ReadUnicodeLiteral(c, ref.end, &c);
+                if (lit == -1) {
+                    return false;
+                }
+
+                uint32_t u = lit;
+
+                if (0xD800 <= lit && lit <= 0xDBFF) {
+                    lit = ReadUnicodeLiteral(c, ref.end, &c);
+                    if (0xDC00 > lit || lit > 0xDFFF) {
+                        return false;
+                    }
+
+                    u &= 0x03FF;
+                    u <<= 10;
+                    u |= 0x10000;
+
+                    u |= lit & 0x03FF;
+                }
+
+                const char byteMask = 0b00111111;
+                const char prefix = 0b10000000;
+
+                if (u <= 0x007f) {
+                    *(t++) = u;
+                } else if (u <= 0x07ff) {
+                    *(t++) = 0b11000000 | (u >> 6);
+                    *(t++) = prefix | (u & byteMask);
+                } else if (u <= 0xffff) {
+                    *(t++) = 0b11100000 | (u >> 12);
+                    *(t++) = prefix | ((u >> 6) & byteMask);
+                    *(t++) = prefix | (u & byteMask);
+                } else if (u <= 0x10ffff) {
+                    *(t++) = 0b11110000 | (u >> 18);
+                    *(t++) = prefix | ((u >> 12) & byteMask);
+                    *(t++) = prefix | ((u >> 6) & byteMask);
+                    *(t++) = prefix | (u & byteMask);
+                } else {
+                    return false;
+                }
+            } break;
+            default:
+                return false;
+            }
+        } else {
+            *(t++) = *(c++);
+        }
+    }
+
+    arena.ReturnUnused(totalSize - std::distance(target, t));
+    cleanRef = {target, t};
+    // std::cout << "Unclean str: " << cleanRef.ToStd() << std::endl;
+    return true;
+}
+
 static bool ParseObject(Element *elem, const char *begin, const char *end,
                         ArenaAllocator &arena, const char **term) {
-    elem->type = Element::Type::Object; // Set type at the start, so that the
-                                        // helper works
+    elem->type = Element::Type::Object; // Set type at the start, so that
+                                        // the helper works
     begin = FwdSpaces(begin, end);
 
     while (begin != end) {
@@ -169,14 +480,22 @@ static bool ParseObject(Element *elem, const char *begin, const char *end,
         }
 
         begin++; // Skip over opening quote
+        Element *key = arena.CreateElement();
         Element *value = arena.CreateElement();
 
-        if (!value) {
+        if (!key || !value) {
             elem->ref = "Failed to allocate element";
             return false;
         }
 
-        StringView key = {begin, strEnd};
+        key->type = Element::Type::Key;
+        key->ref = {begin, strEnd};
+        if (!key->UnescapeStr(arena)) {
+            elem->type = Element::Type::Error;
+            elem->ref = "Key contains incorrectly escaped characters";
+            return false;
+        }
+
         strEnd++; // Skip over closing quote
 
         begin = FwdSpaces(strEnd, end);
@@ -189,7 +508,7 @@ static bool ParseObject(Element *elem, const char *begin, const char *end,
 
         begin++; // Skip over colon
         if (value->ParseBody({begin, end}, arena, &begin)) {
-            if (!elem->ObjectPush(key, value, arena)) {
+            if (!elem->ObjectPush(key, value)) {
                 elem->type = Element::Type::Error;
                 elem->ref = "Failed to append key to object";
             }
@@ -235,11 +554,12 @@ static bool ParseArray(Element *elem, const char *begin, const char *end,
             elem->ArrayPush(el);
         } else {
             elem->type = Element::Type::Error;
-            elem->ref = el->ref; // Get the error message from the child element
-                                 // that failed to parse
+            elem->ref = el->ref; // Get the error message from the child
+                                 // element that failed to parse
             return false;
         }
 
+        // NOTE: Check if this incorrectly skips past missing comma
         begin = FwdCommaOrTerm(begin, end, ']');
     }
 
@@ -252,6 +572,7 @@ bool Element::ParseBody(StringView body, ArenaAllocator &arena,
                         const char **term) {
     auto begin = body.begin, end = body.end;
 
+    // Reset element, in case it is being reused
     type = Type::Error;
     next = nullptr;
     firstChild = nullptr;
@@ -267,6 +588,10 @@ bool Element::ParseBody(StringView body, ArenaAllocator &arena,
     switch (*begin) {
     case '\"':
         ParseString(this, begin + 1, end, term);
+        if (!UnescapeStr(arena)) {
+            type = Type::Error;
+            ref = "String contains incorrectly escaped characters";
+        }
         break;
 
     case '{':
@@ -317,7 +642,7 @@ bool Element::ParseBody(StringView body, ArenaAllocator &arena,
     return type != Type::Error;
 }
 
-bool Element::Serialize(std::ostream &s, int level) {
+bool Element::Serialize(ArenaAllocator &arena, std::ostream &s, int level) {
     bool res = true;
 
     auto addTabs = [](auto &s, int level) {
@@ -328,7 +653,7 @@ bool Element::Serialize(std::ostream &s, int level) {
 
     switch (type) {
     case Type::String:
-        s << '\"' << ref << '\"';
+        s << '\"' << GetEscapedString(arena) << '\"';
         break;
     case Type::Number:
         s << ref;
@@ -337,16 +662,24 @@ bool Element::Serialize(std::ostream &s, int level) {
         s << '{' << std::endl;
 
         size_t index = 0;
-        res = IterateObject([&](auto key, auto e) {
+        for (auto it = firstChild; it != nullptr; it = it->next) {
             if (index++ != 0) {
                 s << ',' << std::endl;
             }
 
             addTabs(s, level + 1);
 
-            s << '\"' << key << "\": ";
-            e->Serialize(s, level + 1);
-        });
+            s << '\"' << it->GetEscapedString(arena) << "\": ";
+            if (!it->firstChild) {
+                res = false;
+                break;
+            }
+
+            it->firstChild->Serialize(arena, s, level + 1);
+        }
+
+        if (res == false)
+            break;
 
         s << std::endl;
         addTabs(s, level);
@@ -362,7 +695,7 @@ bool Element::Serialize(std::ostream &s, int level) {
 
             addTabs(s, level + 1);
 
-            e->Serialize(s, level + 1);
+            e->Serialize(arena, s, level + 1);
         });
 
         s << std::endl;
@@ -448,13 +781,13 @@ void ArenaAllocator::AllocateElements() {
     }
 };
 
-StringView ArenaAllocator::PushString(StringView view) {
+char *ArenaAllocator::AllocateString(size_t size) {
     StringAllocHeader *it = nextStringAlloc;
     int searchLength = 3; // Max steps-1 to search for free space
 
     // Find allocation where the string fits
     while (it) {
-        if (it->Remain() >= view.Size()) {
+        if (it->Remain() >= size) {
             break;
         }
 
@@ -467,7 +800,7 @@ StringView ArenaAllocator::PushString(StringView view) {
     }
 
     if (!it) {
-        it = AllocateStrings(std::max<size_t>(view.Size(), 1024));
+        it = AllocateStrings(std::max<size_t>(size, 1024));
     }
 
     assert(it != nullptr);
@@ -477,9 +810,23 @@ StringView ArenaAllocator::PushString(StringView view) {
     char *ptr =
         reinterpret_cast<char *>(it) + sizeof(StringAllocHeader) + it->head;
 
-    memcpy(ptr, view.begin, view.Size());
-    it->head += view.Size();
-    return {ptr, view.Size()};
+    it->head += size;
+
+    return ptr;
+}
+
+void ArenaAllocator::ReturnUnused(size_t size) {
+    if (!nextStringAlloc)
+        return;
+    if (nextStringAlloc->head < size)
+        return;
+    nextStringAlloc->head -= size;
+}
+
+StringView ArenaAllocator::PushString(StringView view) {
+    auto target = AllocateString(view.Size());
+    memcpy(target, view.begin, view.Size());
+    return {target, view.Size()};
 }
 
 } // namespace StupidJSON

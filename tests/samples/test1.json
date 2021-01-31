@@ -1,5 +1,5 @@
 {
-    "hello": "ffdsfsd",
+    "hello": "ff\u01CCdsfsd\ud83d\ude04\ud83d\udc36",
     "foo": -4556.6,
     "test": ["hej", 7.5, 0]
 }

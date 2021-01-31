@@ -1,4 +1,6 @@
 #pragma once
+#include "fast_float/fast_float.h"
+
 #include <algorithm>
 #include <cassert>
 #include <charconv>
@@ -75,28 +77,44 @@ struct Element {
     };
 
     Type type;
-    uint32_t childCount;
+    StringView ref;
     Element *next;
     Element *firstChild;
-    Element *lastChild;
-    StringView ref;
+    union {
+        struct {
+            Element *lastChild;
+            size_t childCount;
+        };
+        StringView
+            cleanRef; // Only used for String or Key to contain escaped version
+    };
 
     bool ParseBody(StringView body, ArenaAllocator &arena,
                    const char **term = nullptr);
 
-    bool Serialize(std::ostream &s, int level = 0);
+    bool Serialize(ArenaAllocator &arena, std::ostream &s, int level = 0);
+
+    StringView GetString(ArenaAllocator &arena);
+    StringView GetEscapedString(ArenaAllocator &arena);
+    void SetString(StringView str);
+    void Setkey(StringView key);
 
     bool ArrayPush(Element *value);
+    bool ObjectPush(Element *key, Element *value);
     bool ObjectPush(StringView key, Element *value, ArenaAllocator &arena);
     bool ObjectAssign(StringView key, Element *value, ArenaAllocator &arena);
     bool ValuePush(Element *key);
 
-    template <typename T> bool GetNumber(T &val);
+    void EscapeStr(ArenaAllocator &arena);
+    bool UnescapeStr(ArenaAllocator &arena);
+
+    template <typename T> bool GetInteger(T &val);
+    template <typename T> bool GetFloatingPoint(T &val);
     template <typename T> bool SetNumber(T val, ArenaAllocator &arena);
 
     Element *GetArrayIndex(uint32_t index);
-    Element *FindKey(StringView name);
-    Element *FindChildElement(StringView name);
+    Element *FindKey(StringView name, ArenaAllocator &arena);
+    Element *FindChildElement(StringView name, ArenaAllocator &arena);
 
     template <typename L> bool IterateArray(L l) {
         if (type != Type::Array) {
@@ -112,14 +130,14 @@ struct Element {
         return true;
     }
 
-    template <typename L> bool IterateObject(L l) {
+    template <typename L> bool IterateObject(ArenaAllocator &arena, L l) {
         if (type != Type::Object) {
             return false;
         }
 
         for (auto it = firstChild; it != nullptr; it = it->next) {
             assert(it->type == Type::Key);
-            l(it->ref, it->firstChild);
+            l(it->GetString(arena), it->firstChild);
         }
 
         return true;
@@ -138,12 +156,14 @@ struct Element {
         return arr;
     }
 
-    inline std::unordered_map<std::string_view, Element *> GetObjectAsMap() {
+    inline std::unordered_map<std::string_view, Element *>
+    GetObjectAsMap(ArenaAllocator &arena) {
         std::unordered_map<std::string_view, Element *> map;
         map.reserve(childCount);
 
-        IterateObject(
-            [&map](auto name, Element *elem) { map[name.ToStd()] = elem; });
+        IterateObject(arena, [&map](auto name, Element *elem) {
+            map[name.ToStd()] = elem;
+        });
 
         return map;
     }
@@ -204,12 +224,54 @@ class ArenaAllocator {
         return &el;
     }
 
+    char *AllocateString(size_t size);
+    void ReturnUnused(size_t size);
+
     /**
      * Push a string to a stable position in the arena and return a
      * string_view pointig to it.
      */
     StringView PushString(StringView view);
 };
+
+inline StringView Element::GetString(ArenaAllocator &arena) {
+    if (type != Type::String && type != Type::Key) {
+        return {};
+    }
+
+    if (cleanRef.begin != nullptr) {
+        return cleanRef;
+    }
+
+    UnescapeStr(arena);
+    return cleanRef;
+}
+
+inline StringView Element::GetEscapedString(ArenaAllocator &arena) {
+    if (type != Type::String && type != Type::Key) {
+        return {};
+    }
+
+    if (ref.begin != nullptr) {
+        return ref;
+    }
+
+    EscapeStr(arena);
+    return ref;
+}
+
+inline void Element::SetString(StringView str) {
+    type = Type::String;
+    ref = {};
+    firstChild = nullptr;
+    cleanRef = str;
+}
+
+inline void Element::Setkey(StringView key) {
+    type = Type::Key;
+    ref = {};
+    cleanRef = key;
+}
 
 inline bool Element::ArrayPush(Element *value) {
     if (type != Type::Array) {
@@ -229,32 +291,43 @@ inline bool Element::ArrayPush(Element *value) {
     return true;
 }
 
+inline bool Element::ObjectPush(Element *key, Element *value) {
+    if (type != Type::Object) {
+        return false;
+    }
+
+    assert(key->type == Type::Key);
+    assert(value->type != Type::Key);
+    assert(value->type != Type::Error);
+
+    key->ValuePush(value);
+
+    if (!firstChild || !lastChild) {
+        firstChild = key;
+    } else {
+        lastChild->next = key;
+    }
+
+    lastChild = key;
+    childCount++;
+    return true;
+}
+
 inline bool Element::ObjectPush(StringView key, Element *value,
                                 ArenaAllocator &arena) {
     if (type != Type::Object) {
         return false;
     }
 
-    assert(value->type != Type::Key);
-    assert(value->type != Type::Error);
-
     Element *keyElem = arena.CreateElement();
     if (!keyElem)
         return false;
 
     keyElem->type = Type::Key;
-    keyElem->ref = key;
-    keyElem->ValuePush(value);
+    keyElem->ref = {};
+    keyElem->cleanRef = key;
 
-    if (!firstChild || !lastChild) {
-        firstChild = keyElem;
-    } else {
-        lastChild->next = keyElem;
-    }
-
-    lastChild = keyElem;
-    childCount++;
-    return true;
+    return ObjectPush(keyElem, value);
 }
 
 inline bool Element::ValuePush(Element *value) {
@@ -265,34 +338,38 @@ inline bool Element::ValuePush(Element *value) {
     assert(value->type != Type::Key);
 
     firstChild = value;
-    lastChild = value;
-
-    childCount = 1;
     return true;
 }
 
-template <typename T> bool Element::GetNumber(T &val) {
+template <typename T> bool Element::GetInteger(T &val) {
     if (type != Type::Number)
         return false;
-    std::from_chars_result res = std::from_chars(ref.begin, ref.end, val);
+    auto res = std::from_chars(ref.begin, ref.end, val);
+
+    return res.ec == std::errc();
+}
+
+template <typename T> bool Element::GetFloatingPoint(T &val) {
+    if (type != Type::Number)
+        return false;
+    auto res = fast_float::from_chars(ref.begin, ref.end, val);
 
     return res.ec == std::errc();
 }
 
 template <typename T> bool Element::SetNumber(T val, ArenaAllocator &arena) {
-    char buf[128];
-    std::to_chars_result res =
-        std::to_chars(std::begin(buf), std::end(buf), val);
-
-    if (res.ec == std::errc()) {
-        type = Type::Number;
-        ref = arena.PushString({buf, res.ptr});
-    } else {
+    if (!std::isfinite(val)) {
         type = Type::Error;
         ref = "Failed to set number";
         return false;
     }
-    return res.ec == std::errc();
+
+    // Temporary hack while I can't be bothered
+    auto buf = std::to_string(val);
+    type = Type::Number;
+    ref = arena.PushString({buf.data(), buf.size()});
+
+    return true;
 }
 
 inline Element *Element::GetArrayIndex(uint32_t index) {
@@ -310,7 +387,7 @@ inline Element *Element::GetArrayIndex(uint32_t index) {
     return nullptr;
 }
 
-inline Element *Element::FindKey(StringView name) {
+inline Element *Element::FindKey(StringView name, ArenaAllocator &arena) {
     if (type != Type::Object) {
         return nullptr;
     }
@@ -320,7 +397,7 @@ inline Element *Element::FindKey(StringView name) {
     while (it) {
         assert(it->type == Type::Key);
 
-        if (it->ref == name) {
+        if (it->GetString(arena) == name) {
             return it;
         }
 
@@ -330,8 +407,9 @@ inline Element *Element::FindKey(StringView name) {
     return nullptr;
 }
 
-inline Element *Element::FindChildElement(StringView name) {
-    Element *key = FindKey(name);
+inline Element *Element::FindChildElement(StringView name,
+                                          ArenaAllocator &arena) {
+    Element *key = FindKey(name, arena);
     if (key)
         return key->firstChild;
 
@@ -343,7 +421,7 @@ inline bool Element::ObjectAssign(StringView key, Element *value,
     if (value->type == Type::Key || value->type == Type::Error)
         return false;
 
-    Element *find = FindChildElement(key);
+    Element *find = FindChildElement(key, arena);
     if (find) {
         find->ValuePush(value);
         return true;

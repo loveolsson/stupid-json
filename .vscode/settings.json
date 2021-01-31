@@ -6,6 +6,7 @@
     },
     "C_Cpp.default.cppStandard": "c++17",
     "files.associations": {
+        "charconv": "cpp",
         "any": "cpp",
         "array": "cpp",
         "atomic": "cpp",
@@ -15,6 +16,7 @@
         "chrono": "cpp",
         "clocale": "cpp",
         "cmath": "cpp",
+        "codecvt": "cpp",
         "cstdarg": "cpp",
         "cstddef": "cpp",
         "cstdint": "cpp",
@@ -62,7 +64,7 @@
         "streambuf": "cpp",
         "typeinfo": "cpp",
         "variant": "cpp",
-        "codecvt": "cpp",
-        "charconv": "cpp"
+        "cinttypes": "cpp",
+        "cfenv": "cpp"
     }
 }
