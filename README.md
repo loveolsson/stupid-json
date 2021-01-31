@@ -1,4 +1,4 @@
-#StupidJSON
+# StupidJSON
 Incomplete, not tested, not maintained, just a test, don't use!
 
 JSON parser that aims to do extremely fast document parsing, minimal allocations, and delay all value parsing until the value is read by the user.
